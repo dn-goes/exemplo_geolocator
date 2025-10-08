@@ -1,9 +1,10 @@
+import 'package:exemplo_geolocator/clima_service.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
-void main(){
-  runApp(MaterialApp(
+void main() {
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
     home: LocationScreen(),
   ));
 }
@@ -16,49 +17,152 @@ class LocationScreen extends StatefulWidget {
 }
 
 class _LocationScreenState extends State<LocationScreen> {
-  //atributos
-  String mensagem = "";
-  
-  //método para pegar a localização atual do dispositivo
-  void getLocation() async{
-    bool servicoDisponivel;
-    LocationPermission permissao;
+  // Estado da tela
+  String mensagem = "Toque em um botão para começar";
+  bool carregando = false;
 
-    //verifica se o serviço esta disponivel
-    servicoDisponivel = await Geolocator.isLocationServiceEnabled();
-    if(!servicoDisponivel){
-      mensagem = "Serviço de localização desabilitado";
-    }
-    //solicta permissão para o usuário
-    permissao = await Geolocator.checkPermission();
-    if(permissao == LocationPermission.denied){
-      permissao = await Geolocator.requestPermission();
-      if(permissao == LocationPermission.denied){
-        mensagem = "Permissão de localização negada";
+  /// 🧭 Obtém a localização atual do dispositivo
+  Future<void> getLocation() async {
+    setState(() => carregando = true);
+    try {
+      // Verifica se o serviço está habilitado
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() => mensagem = "Serviço de localização desabilitado");
+        return;
       }
+
+      // Verifica e solicita permissão
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() => mensagem = "Permissão de localização negada");
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        setState(() => mensagem = "Permissão de GPS permanentemente negada");
+        return;
+      }
+
+      // Obtém posição
+      final position = await Geolocator.getCurrentPosition();
+      setState(() {
+        mensagem =
+            "Latitude: ${position.latitude.toStringAsFixed(4)}\nLongitude: ${position.longitude.toStringAsFixed(4)}";
+      });
+    } catch (e) {
+      setState(() => mensagem = "Erro ao obter localização: $e");
+    } finally {
+      setState(() => carregando = false);
     }
-    //após solictar permissão , ou se a permissão já estiver dada
-    //pego a localização do dispositivo
-    Position position = await Geolocator.getCurrentPosition();
-    mensagem = "Latitude: ${position.latitude}, Longitude: ${position.longitude}";
-    setState(() {
-      
-    });
   }
 
-  
+  /// 🌦️ Busca cidade e clima atual
+  Future<void> getCityWeather() async {
+    setState(() => carregando = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        setState(() => mensagem = "Serviço de GPS não habilitado");
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          setState(() => mensagem = "Permissão de GPS negada");
+          return;
+        }
+      }
+
+      final position = await Geolocator.getCurrentPosition();
+
+      // Chama o serviço de clima
+      final cidade = await ClimaService.getCityWeatherByPosition(position);
+      final temperatura = (cidade["main"]["temp"] - 273.15).toStringAsFixed(1);
+
+      setState(() {
+        mensagem = "📍 ${cidade["name"]}\n🌡️ Temperatura: $temperatura°C";
+      });
+    } catch (e) {
+      setState(() => mensagem = "Erro ao obter clima: $e");
+    } finally {
+      setState(() => carregando = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("GPS - Localização"),),
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(mensagem),
-            ElevatedButton(onPressed: () async{getLocation();},
-             child: Text("Obter Localização"))
-          ],
+      appBar: AppBar(
+        title: const Text("Localização & Clima"),
+        backgroundColor: Colors.blueAccent,
+        centerTitle: true,
+      ),
+      body: Container(
+        width: double.infinity,
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Colors.lightBlueAccent, Colors.blue],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 40),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (carregando)
+                  const CircularProgressIndicator(color: Colors.white)
+                else
+                  Text(
+                    mensagem,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      color: Colors.white,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                const SizedBox(height: 30),
+                ElevatedButton.icon(
+                  onPressed: getLocation,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                  icon: const Icon(Icons.my_location),
+                  label: const Text("Obter Localização"),
+                ),
+                const SizedBox(height: 15),
+                ElevatedButton.icon(
+                  onPressed: getCityWeather,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: Colors.blueAccent,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  ),
+                  icon: const Icon(Icons.cloud),
+                  label: const Text("Obter Clima"),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
